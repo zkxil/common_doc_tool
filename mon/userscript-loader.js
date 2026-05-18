@@ -149,7 +149,8 @@
         const name = item.name || item.label || item.source || 'unknown';
         try {
           if (typeof item.loader === 'function') {
-            return await item.loader();
+            const code = await fetcher(item.url);
+            return { code, source: name };
           }
           if (typeof item.url === 'string') {
             const code = await fetcher(item.url);
