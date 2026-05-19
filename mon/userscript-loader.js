@@ -56,7 +56,9 @@
               settled = true;
               clearTimeout(guard);
               if (res.status >= 200 && res.status < 300) {
-                resolve(opts.responseType === 'json' ? res.response : res.responseText);
+                const text = opts.responseType === 'json' ? res.response : res.responseText;
+                console.log('[Loader] 响应长度:', text.length, 'URL:', url.slice(0, 120));
+                resolve(text);
               } else {
                 reject(new Error(`HTTP ${res.status}`));
               }
