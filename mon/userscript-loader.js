@@ -1,3 +1,4 @@
+// Userscript Loader — 动态脚本加载器（可复用）v0.1.0
 // 通过 @require 引用，提供 fallback 多源加载、缓存、版本控制能力
 // 主脚本需自行声明：GM_xmlhttpRequest, GM_getValue, GM_setValue, GM_deleteValue, GM_listValues
 
@@ -36,28 +37,56 @@
   function createFetcher(timeout = 15000) {
     function request(url, opts = {}) {
       return new Promise((resolve, reject) => {
-        GM_xmlhttpRequest(assign({
-          method: 'GET',
-          url,
-          timeout,
-          responseType: opts.responseType || 'text',
-          onload(res) {
-            if (res.status >= 200 && res.status < 300) {
-              resolve(opts.responseType === 'json' ? res.response : res.responseText);
-            } else {
-              reject(new Error(`HTTP ${res.status}`));
-            }
-          },
-          onerror(err) {
-            reject(new Error(`NetworkError: ${JSON.stringify(err)}`));
-          },
-          ontimeout() {
-            reject(new Error(`Timeout (${timeout}ms)`));
-          },
-          onabort() {
-            reject(new Error('Aborted'));
+        let settled = false;
+        const guard = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Request never settled (port disconnected?)'));
           }
-        }, opts.overrides || {}));
+        }, timeout + 3000);
+
+        try {
+          GM_xmlhttpRequest(assign({
+            method: 'GET',
+            url,
+            timeout,
+            responseType: opts.responseType || 'text',
+            onload(res) {
+              if (settled) return;
+              settled = true;
+              clearTimeout(guard);
+              if (res.status >= 200 && res.status < 300) {
+                resolve(opts.responseType === 'json' ? res.response : res.responseText);
+              } else {
+                reject(new Error(`HTTP ${res.status}`));
+              }
+            },
+            onerror(err) {
+              if (settled) return;
+              settled = true;
+              clearTimeout(guard);
+              reject(new Error(`NetworkError: ${JSON.stringify(err)}`));
+            },
+            ontimeout() {
+              if (settled) return;
+              settled = true;
+              clearTimeout(guard);
+              reject(new Error(`Timeout (${timeout}ms)`));
+            },
+            onabort() {
+              if (settled) return;
+              settled = true;
+              clearTimeout(guard);
+              reject(new Error('Aborted'));
+            }
+          }, opts.overrides || {}));
+        } catch (e) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(guard);
+            reject(new Error(`GM_xmlhttpRequest 异常: ${e.message}`));
+          }
+        }
       });
     }
 
@@ -149,7 +178,7 @@
         const name = item.name || item.label || item.source || 'unknown';
         try {
           if (typeof item.loader === 'function') {
-            const code = await fetcher(item.url);
+            const code = await item.loader();
             return { code, source: name };
           }
           if (typeof item.url === 'string') {
